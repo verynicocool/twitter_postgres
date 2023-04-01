@@ -89,6 +89,8 @@ def insert_tweet(connection,tweet):
     You'll need to add appropriate SQL insert statements to get it to work.
     '''
 
+with connection.begin() as trans:
+
     # skip tweet if it's already inserted
     sql=sqlalchemy.sql.text('''
     SELECT id_tweets 
@@ -103,7 +105,6 @@ def insert_tweet(connection,tweet):
 
     # insert tweet within a transaction;
     # this ensures that a tweet does not get "partially" loaded
-    with connection.begin() as trans:
 
         ########################################
         # insert into the users table
@@ -116,9 +117,9 @@ def insert_tweet(connection,tweet):
         # create/update the user
         sql = sqlalchemy.sql.text('''
             insert into users
-            (id_users, created_at, screen_name, name, location, id_urls, description, protected, verified, friends_count, listed_count, favourites_count, statuses_count)
+            (id_users, created_at, screen_name, name, location, id_urls, description, protected, verified, friends_count, listed_count, favourites_count, statuses_count, withheld_in_countries)
             values
-            (:id_users, :created_at, :screen_name, :name, :location, :id_urls, :description, :protected, :verified, :friends_count, :listed_count, :favourites_count, :statuses_count)
+            (:id_users, :created_at, :screen_name, :name, :location, :id_urls, :description, :protected, :verified, :friends_count, :listed_count, :favourites_count, :statuses_count, :withheld_in_countries)
             on conflict do nothing;
             ''')
 
@@ -201,21 +202,21 @@ def insert_tweet(connection,tweet):
         
         res = connection.execute(sql, {
             'id_tweets': tweet['id'],
-            'id_users': tweet['user']['id'],
+            'id_users': tweet.get('in_reply_to_user_id', None),
             'created_at': tweet['created_at'],
-            'in_reply_to_status_id': tweet.get('in_reply_to_status_id', None),
-            'in_reply_to_user_id': tweet.get('in_reply_to_user_id', None),
+            'in_reply_to_status_id': tweet['in_reply_to_status_id'],
+            'in_reply_to_user_id': tweet['in_reply_to_user_id'],
             'quoted_status_id': tweet.get('quoted_status_id', None),
-            'retweet_count': tweet.get('retweet_count', None),
-            'favorite_count': tweet.get('favorite_count', None),
-            'quote_count': tweet.get('quote_count', None),
-            'source': remove_nulls(tweet.get('source', None)),
+            'retweet_count':tweet['retweet_count'],
+            'favorite_count': tweet['favorite_count'],
+            'quote_count': tweet['quote_count'],
+            'source': remove_nulls(tweet['source']),
             'text': remove_nulls(text),
-            'country_code': remove_nulls(country_code),
-            'state_code': remove_nulls(state_code),
-            'lang': tweet.get('lang', None),
+            'country_code':country_code,
+            'state_code': state_code,
+            'lang': remove_nulls(tweet['lang']),
             'place_name': remove_nulls(place_name),
-            'geo': None}
+            'geo':geo_str + '(' + geo_coords + ')'}
             )
         ########################################
         # insert into the tweet_urls table
@@ -233,8 +234,7 @@ def insert_tweet(connection,tweet):
                 insert into tweet_urls
                         (id_tweets, id_urls)
                         values
-                        (:id_tweets, :id_urls)
-                ''')
+                        (:id_tweets, :id_urls)''')
             res = connection.execute(sql, {'id_tweets': tweet['id'], 'id_urls': id_urls})
 
         ########################################
@@ -275,6 +275,8 @@ def insert_tweet(connection,tweet):
                 on conflict do nothing;
                 ''')
 
+            res = connection.execute(sql, {'id_users':mention['id'], 'id_tweets':tweet['id']})
+
         ########################################
         # insert into the tweet_tags table
         ########################################
@@ -299,7 +301,7 @@ def insert_tweet(connection,tweet):
 
              res = connection.execute(sql,{
                 'id_tweets': tweet['id'],
-                'tag': remove_nulls(tag)}
+                'tag': tag}
                 )
 
         ########################################
@@ -327,7 +329,7 @@ def insert_tweet(connection,tweet):
             res = connection.execute(sql, {
                 'id_tweets': tweet['id'],
                 'id_urls': id_urls,
-                'type': remove_nulls(medium['type'])}
+                'type': medium['type']}
                 )
 
 ################################################################################
